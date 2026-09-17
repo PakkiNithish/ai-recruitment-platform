@@ -168,6 +168,55 @@ def test_ai_connection(
                 "message": f"Hugging Face token valid ({latency_ms}ms). Account: {name}",
             }
 
+        elif provider == "Azure AI Foundry":
+            api_key = cfg.get("apiKey", "").strip()
+            raw_endpoint = cfg.get("serverUrl", "").strip()
+            deployment = cfg.get("modelName", "gpt-4.1-mini").strip()
+            
+            if not api_key or not raw_endpoint:
+                return {"success": False, "source": "UI", "message": "API Key and Endpoint URL are both required."}
+            
+            # Clean up endpoint if user copied the full URL with /openai/v1/responses or /openai/v1
+            endpoint = raw_endpoint.rstrip("/")
+            for suffix in ["/openai/v1/responses", "/openai/v1", "/models"]:
+                if endpoint.endswith(suffix):
+                    endpoint = endpoint[:-len(suffix)].rstrip("/")
+            
+            from openai import AzureOpenAI, OpenAI
+            
+            # Try 1: AzureOpenAI client with cleaned base endpoint
+            try:
+                client = AzureOpenAI(
+                    api_key=api_key,
+                    azure_endpoint=endpoint,
+                    api_version="2024-12-01-preview"
+                )
+                response = client.chat.completions.create(
+                    model=deployment,
+                    messages=[{"role": "user", "content": "ping"}],
+                    max_tokens=5
+                )
+            except Exception as e1:
+                # Try 2: Standard OpenAI client using direct base_url (Foundry OpenAI-compatible endpoint)
+                v1_url = f"{endpoint}/openai/v1"
+                client = OpenAI(
+                    api_key=api_key,
+                    base_url=v1_url
+                )
+                response = client.chat.completions.create(
+                    model=deployment,
+                    messages=[{"role": "user", "content": "ping"}],
+                    max_tokens=5
+                )
+                
+            latency_ms = int((time.time() - start) * 1000)
+            return {
+                "success": True,
+                "source": "UI",
+                "latency_ms": latency_ms,
+                "message": f"Azure AI Foundry connected ({latency_ms}ms). Deployment '{deployment}' is ready ✓",
+            }
+
         else:
             return {"success": False, "message": f"Unknown provider: {provider}"}
 

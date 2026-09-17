@@ -153,6 +153,46 @@ def get_chat_model(
         from langchain_anthropic import ChatAnthropic
         return ChatAnthropic(model_name=model_name or "claude-3-5-sonnet-20240620", temperature=temperature, api_key=api_key)
 
+    elif provider == "Azure AI Foundry":
+        if not api_key:
+            print("  -> Azure AI Foundry API Key missing in UI settings.")
+            return None
+        if not server_url:
+            print("  -> Azure AI Foundry Endpoint URL missing in UI settings.")
+            return None
+            
+        from langchain_openai import AzureChatOpenAI, ChatOpenAI
+        
+        deployment_name = model_name or "gpt-4.1-mini"
+        endpoint = server_url.strip().rstrip("/")
+        for suffix in ["/openai/v1/responses", "/openai/v1", "/models"]:
+            if endpoint.endswith(suffix):
+                endpoint = endpoint[:-len(suffix)].rstrip("/")
+        
+        # If the endpoint contains services.ai.azure.com, it can work with ChatOpenAI via /openai/v1 or AzureChatOpenAI
+        try:
+            kwargs = {
+                "azure_deployment": deployment_name,
+                "azure_endpoint": endpoint,
+                "api_key": api_key,
+                "api_version": "2024-12-01-preview",
+                "temperature": temperature,
+            }
+            if json_mode:
+                kwargs["model_kwargs"] = {"response_format": {"type": "json_object"}}
+            return AzureChatOpenAI(**kwargs)
+        except Exception as e:
+            logger.warning(f"Falling back to standard OpenAI format for Foundry: {e}")
+            kwargs = {
+                "model": deployment_name,
+                "base_url": f"{endpoint}/openai/v1",
+                "api_key": api_key,
+                "temperature": temperature,
+            }
+            if json_mode:
+                kwargs["model_kwargs"] = {"response_format": {"type": "json_object"}}
+            return ChatOpenAI(**kwargs)
+
     elif provider == "Hugging Face":
         if not api_key:
             print("  -> Hugging Face API Token missing in UI settings.")
@@ -202,6 +242,15 @@ def get_embedding_model():
             model=embedding_model_name or "text-embedding-3-small",
             api_key=api_key
         )
+    elif provider == "Azure AI Foundry" and api_key and server_url:
+        from langchain_openai import AzureOpenAIEmbeddings
+        return AzureOpenAIEmbeddings(
+            azure_deployment=embedding_model_name or "text-embedding-3-small",
+            azure_endpoint=server_url,
+            api_key=api_key,
+            api_version="2024-12-01-preview",
+        )
+
     elif provider == "Hugging Face" and api_key:
         from langchain_huggingface import HuggingFaceEmbeddings
         return HuggingFaceEmbeddings(
